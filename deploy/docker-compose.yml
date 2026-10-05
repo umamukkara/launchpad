@@ -5,14 +5,40 @@ services:
       dockerfile: deploy/Dockerfile.engine
     ports:
       - "7070:7070"
+      - "9100:9100" # /metrics
 
   missioncontrol:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.missioncontrol
     ports:
-      - "8080:8080"
+      - "8080:8080" # REST + WebSocket + /metrics
     environment:
       - LAUNCHPAD_ENGINE_ADDR=engine:7070
     depends_on:
       - engine
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - engine
+      - missioncontrol
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus

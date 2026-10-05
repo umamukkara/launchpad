@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/umamukkara/launchpad/internal/metrics"
 	pb "github.com/umamukkara/launchpad/internal/telemetry/telemetrypb"
 )
 
@@ -49,10 +50,12 @@ func (s *Server) Ignite(req *pb.IgniteRequest, stream pb.EngineControl_IgniteSer
 	s.mu.Lock()
 	s.active[req.LaunchId] = abort
 	s.mu.Unlock()
+	metrics.EngineActiveBurns.Inc()
 	defer func() {
 		s.mu.Lock()
 		delete(s.active, req.LaunchId)
 		s.mu.Unlock()
+		metrics.EngineActiveBurns.Dec()
 	}()
 
 	ticker := time.NewTicker(100 * time.Millisecond)

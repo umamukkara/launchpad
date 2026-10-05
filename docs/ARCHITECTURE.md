@@ -58,6 +58,33 @@ function in the same binary — closer to what load-testing a real
 microservice looks like. `deploy/docker-compose.yml` runs them as two
 containers for exactly this reason.
 
+## Observability
+
+Both services are instrumented with Prometheus (`internal/metrics`):
+
+- `missioncontrol` wraps every REST route in middleware that records a
+  request count and duration, labeled by *route pattern* (e.g.
+  `/api/crew/{id}`) rather than the raw path, so one crew ID doesn't
+  become its own metrics series. It also tracks a gauge of currently open
+  WebSocket subscriptions. All of this is served at `GET /metrics` on its
+  normal port (8080).
+- `engine` wraps every gRPC call (unary and streaming) in an interceptor
+  that records the same kind of count/duration, labeled by method and
+  gRPC status code, plus a gauge of currently running `Ignite` streams.
+  Since its main port only speaks gRPC, `/metrics` is served on a second,
+  plain-HTTP port (9100 by default).
+
+This is deliberately decoupled from who's generating the traffic. The
+dashboard's own telemetry chart only shows a launch you ignited from that
+browser tab; these metrics cover *every* request, from any source —
+curl, the dashboard, or a VegaLoad scenario — which is what you actually
+want when watching a load test run. `deploy/docker-compose.yml` adds
+Prometheus (scraping both `/metrics` endpoints every 5s) and Grafana
+(pre-provisioned with a dashboard reading from that Prometheus) as two
+more containers, so `docker compose up` gets you a live view at
+http://localhost:3000 with no extra setup. See the README's
+"Watching live traffic" section for the panel list.
+
 ## What's deliberately not here
 
 - No persistence. Restarting either process resets all state.

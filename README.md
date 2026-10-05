@@ -63,6 +63,41 @@ curl -s -X POST localhost:8080/api/launches/launch-0001/ignite
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
+## Watching live traffic (Prometheus + Grafana)
+
+The dashboard's chart only shows what you trigger from the browser. If
+something else is sending traffic — a VegaLoad scenario, a script, load
+from any source — that traffic doesn't go through the browser at all, so
+the dashboard chart won't move. For that, LaunchPad exposes Prometheus
+metrics, and the Docker setup includes a ready-to-use Grafana dashboard
+that shows it live, no matter who's generating it.
+
+```sh
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+Then open http://localhost:3000 (Grafana; anonymous viewer access is on
+by default, or sign in with `admin` / `admin`). The "LaunchPad — live
+traffic" dashboard is already provisioned, with:
+
+- REST requests/sec, by route
+- REST error rate (4xx/5xx)/sec
+- REST p95 latency, by route
+- gRPC calls/sec, by method
+- gRPC p95 latency, by method
+- Active WebSocket subscriptions
+- Active engine burns (running `Ignite` streams)
+
+Prometheus itself is at http://localhost:9090, if you want to query the
+raw metrics directly.
+
+Each LaunchPad service exposes its own `/metrics` endpoint, so you can
+also point your own Prometheus at them without Docker:
+
+- `missioncontrol`: `http://localhost:8080/metrics`
+- `engine`: `http://localhost:9100/metrics` (a separate port, since the
+  main one speaks gRPC, not plain HTTP)
+
 ## API surface
 
 **REST** (`missioncontrol`, port 8080)
@@ -73,6 +108,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - `POST /api/launches/{id}/abort` — calls gRPC `Abort`
 - `GET /api/engine/status` — calls gRPC `Status`
 - `GET /healthz`
+- `GET /metrics` — Prometheus exposition format
 
 **WebSocket**
 
@@ -85,7 +121,9 @@ docker compose -f deploy/docker-compose.yml up --build
 - `Status(StatusRequest) returns (StatusResponse)`
 
 Server reflection is enabled, so `grpcurl -plaintext localhost:7070 list`
-works out of the box.
+works out of the box. `engine` also serves `GET /metrics` on a separate
+plain-HTTP port (`:9100` by default — see above), since its main port only
+speaks gRPC.
 
 ## Regenerating the gRPC code
 

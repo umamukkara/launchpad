@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/umamukkara/launchpad/internal/metrics"
 )
 
 var upgrader = websocket.Upgrader{
@@ -46,11 +48,13 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	h.subs[conn] = ch
 	h.mu.Unlock()
+	metrics.WebSocketConnectionsActive.Inc()
 
 	defer func() {
 		h.mu.Lock()
 		delete(h.subs, conn)
 		h.mu.Unlock()
+		metrics.WebSocketConnectionsActive.Dec()
 		conn.Close()
 	}()
 

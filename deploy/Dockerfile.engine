@@ -7,5 +7,5 @@ RUN CGO_ENABLED=0 go build -o /out/engine ./cmd/engine
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/engine /engine
-EXPOSE 7070
+EXPOSE 7070 9100
 ENTRYPOINT ["/engine"]

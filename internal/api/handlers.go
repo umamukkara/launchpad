@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/umamukkara/launchpad/internal/metrics"
 	pb "github.com/umamukkara/launchpad/internal/telemetry/telemetrypb"
 	"github.com/umamukkara/launchpad/internal/ws"
 )
@@ -55,23 +57,73 @@ func (s *Server) hubFor(launchID string) *ws.Hub {
 	return h
 }
 
-// Routes registers every HTTP route LaunchPad exposes onto mux.
+// Routes registers every HTTP route LaunchPad exposes onto mux. Each route
+// (other than /metrics itself) is wrapped with Prometheus instrumentation
+// so launchpad_http_requests_total and launchpad_http_request_duration_seconds
+// cover every request regardless of what sent it — the dashboard, curl, or
+// a VegaLoad scenario.
 func (s *Server) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/crew", s.listCrew)
-	mux.HandleFunc("POST /api/crew", s.addCrew)
-	mux.HandleFunc("GET /api/crew/{id}", s.getCrew)
-	mux.HandleFunc("DELETE /api/crew/{id}", s.deleteCrew)
+	route := func(pattern string, h http.HandlerFunc) {
+		mux.HandleFunc(pattern, instrument(pattern, h))
+	}
 
-	mux.HandleFunc("GET /api/launches", s.listLaunches)
-	mux.HandleFunc("POST /api/launches", s.scheduleLaunch)
-	mux.HandleFunc("GET /api/launches/{id}", s.getLaunch)
-	mux.HandleFunc("POST /api/launches/{id}/ignite", s.ignite)
-	mux.HandleFunc("POST /api/launches/{id}/abort", s.abort)
+	route("GET /api/crew", s.listCrew)
+	route("POST /api/crew", s.addCrew)
+	route("GET /api/crew/{id}", s.getCrew)
+	route("DELETE /api/crew/{id}", s.deleteCrew)
 
-	mux.HandleFunc("GET /api/engine/status", s.engineStatus)
-	mux.HandleFunc("GET /healthz", s.healthz)
+	route("GET /api/launches", s.listLaunches)
+	route("POST /api/launches", s.scheduleLaunch)
+	route("GET /api/launches/{id}", s.getLaunch)
+	route("POST /api/launches/{id}/ignite", s.ignite)
+	route("POST /api/launches/{id}/abort", s.abort)
 
-	mux.HandleFunc("GET /ws/launches/{id}", s.launchWS)
+	route("GET /api/engine/status", s.engineStatus)
+	route("GET /healthz", s.healthz)
+
+	route("GET /ws/launches/{id}", s.launchWS)
+
+	// Not wrapped with instrument(): scraping /metrics shouldn't count
+	// towards the very metrics it's reading.
+	mux.Handle("GET /metrics", metrics.Handler())
+}
+
+// instrument wraps h so every call to it records a request count and a
+// duration observation, labeled by the route pattern given at
+// registration time (never the raw path, which would blow up cardinality
+// with one series per launch/crew ID).
+func instrument(pattern string, h http.HandlerFunc) http.HandlerFunc {
+	method, route := splitPattern(pattern)
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		h(sw, r)
+		metrics.HTTPRequestDuration.WithLabelValues(route, method).Observe(time.Since(start).Seconds())
+		metrics.HTTPRequestsTotal.WithLabelValues(route, method, strconv.Itoa(sw.status)).Inc()
+	}
+}
+
+// splitPattern splits a Go 1.22+ ServeMux pattern ("GET /api/crew/{id}")
+// into its method and path parts.
+func splitPattern(pattern string) (method, route string) {
+	for i := 0; i < len(pattern); i++ {
+		if pattern[i] == ' ' {
+			return pattern[:i], pattern[i+1:]
+		}
+	}
+	return "", pattern
+}
+
+// statusWriter captures the status code a handler wrote, since
+// http.ResponseWriter doesn't expose it after the fact.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	sw.status = code
+	sw.ResponseWriter.WriteHeader(code)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
