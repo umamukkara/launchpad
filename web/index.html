@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LaunchPad — mission control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; background:#0b0e14; color:#d7dce3; margin:0; padding:2rem; }
+  h1 { font-size:1.1rem; color:#8fd3ff; margin:0 0 1.5rem; letter-spacing:.04em; text-transform:uppercase; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; max-width:900px; }
+  fieldset { border:1px solid #1f2733; border-radius:8px; padding:1rem; }
+  legend { color:#8fd3ff; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
+  input, select, button { background:#121722; color:#d7dce3; border:1px solid #2a3344; border-radius:4px; padding:.4rem .5rem; margin:.15rem 0; font-family:inherit; }
+  button { cursor:pointer; }
+  button:hover { border-color:#8fd3ff; }
+  pre { background:#05070b; border:1px solid #1f2733; border-radius:6px; padding:.75rem; height:260px; overflow:auto; font-size:.78rem; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:.5rem; }
+  .muted { color:#67738a; font-size:.75rem; }
+</style>
+</head>
+<body>
+  <h1>LaunchPad &mdash; mission control</h1>
+  <p class="muted">A small sample app for exercising REST (HTTP/1.1 + h2c), gRPC, and WebSocket load tests. Not a real launch provider.</p>
+  <div class="grid">
+    <fieldset>
+      <legend>schedule a launch</legend>
+      <div class="row"><input id="vehicle" placeholder="vehicle" value="vega-c"></div>
+      <div class="row"><input id="thrust" placeholder="target thrust (kN)" value="2150" type="number"></div>
+      <div class="row"><input id="duration" placeholder="duration (s)" value="20" type="number"></div>
+      <div class="row"><button onclick="schedule()">schedule</button></div>
+      <div id="launchInfo" class="muted"></div>
+      <div class="row">
+        <button onclick="ignite()">ignite</button>
+        <button onclick="abort()">abort</button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>live telemetry</legend>
+      <pre id="telemetry">(not connected)</pre>
+    </fieldset>
+  </div>
+
+<script>
+let currentLaunch = null;
+let socket = null;
+
+async function schedule() {
+  const body = {
+    vehicle: document.getElementById('vehicle').value,
+    target_thrust_kn: parseFloat(document.getElementById('thrust').value),
+    duration_seconds: parseInt(document.getElementById('duration').value, 10),
+    crew_ids: [],
+  };
+  const res = await fetch('/api/launches', { method: 'POST', body: JSON.stringify(body) });
+  currentLaunch = await res.json();
+  document.getElementById('launchInfo').textContent = 'scheduled: ' + currentLaunch.id + ' (' + currentLaunch.status + ')';
+}
+
+function connect(id) {
+  if (socket) socket.close();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  socket = new WebSocket(proto + '://' + location.host + '/ws/launches/' + id);
+  const pre = document.getElementById('telemetry');
+  pre.textContent = '';
+  socket.onmessage = (ev) => {
+    pre.textContent += ev.data + '\n';
+    pre.scrollTop = pre.scrollHeight;
+  };
+  socket.onclose = () => { pre.textContent += '\n(disconnected)'; };
+}
+
+async function ignite() {
+  if (!currentLaunch) return;
+  connect(currentLaunch.id);
+  await fetch('/api/launches/' + currentLaunch.id + '/ignite', { method: 'POST' });
+}
+
+async function abort() {
+  if (!currentLaunch) return;
+  await fetch('/api/launches/' + currentLaunch.id + '/abort', {
+    method: 'POST',
+    body: JSON.stringify({ reason: 'manual abort from dashboard' }),
+  });
+}
+</script>
+</body>
+</html>

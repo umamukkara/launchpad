@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package launchpad.telemetry.v1;
+
+option go_package = "github.com/umamukkara/launchpad/internal/telemetry/telemetrypb";
+
+// EngineControl is the gRPC service exposed by the engine service.
+// mission-control calls it to schedule a launch and to stream live
+// engine telemetry back for the duration of a flight.
+service EngineControl {
+  // Ignite starts a simulated engine burn for a given launch and
+  // streams telemetry frames back until the burn completes or fails.
+  // This is the primary server-streaming RPC exercised by load tests.
+  rpc Ignite(IgniteRequest) returns (stream TelemetryFrame);
+
+  // Abort requests an immediate, unary shutdown of a running burn.
+  // Useful for exercising short-lived unary gRPC calls alongside the
+  // long-lived stream above.
+  rpc Abort(AbortRequest) returns (AbortResponse);
+
+  // Status is a cheap unary health/state check, useful as a
+  // high-QPS, low-payload gRPC target distinct from Ignite's stream.
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+message IgniteRequest {
+  string launch_id = 1;
+  string vehicle = 2;        // e.g. "vega-c", "vega-e"
+  double target_thrust_kn = 3;
+  int32 duration_seconds = 4; // simulated burn duration
+}
+
+message TelemetryFrame {
+  string launch_id = 1;
+  int64  t_plus_ms = 2;       // milliseconds since ignition
+  double altitude_m = 3;
+  double velocity_mps = 4;
+  double thrust_kn = 5;
+  double fuel_pct = 6;
+  Stage  stage = 7;
+  string note = 8;            // e.g. "MECO", "stage separation"
+}
+
+enum Stage {
+  STAGE_UNSPECIFIED = 0;
+  STAGE_IGNITION = 1;
+  STAGE_ASCENT = 2;
+  STAGE_SEPARATION = 3;
+  STAGE_ORBIT_INSERTION = 4;
+  STAGE_COMPLETE = 5;
+  STAGE_ABORTED = 6;
+}
+
+message AbortRequest {
+  string launch_id = 1;
+  string reason = 2;
+}
+
+message AbortResponse {
+  bool   accepted = 1;
+  string message = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  int32 active_burns = 1;
+  string engine_version = 2;
+}
