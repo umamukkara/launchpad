@@ -33,7 +33,15 @@ go run ./cmd/engine
 go run ./cmd/missioncontrol
 ```
 
-Then open http://localhost:8080 for the dashboard, or drive it directly:
+Then open http://localhost:8080 for the dashboard. Schedule a launch, click
+ignite, and watch live engine telemetry stream in — both as raw JSON frames
+and as a line chart (time since ignition on the x-axis, your choice of
+thrust/altitude/velocity/fuel on the y-axis, with a hover crosshair for
+exact values). It's a quick visual way to see a metric ramp up in real
+time, which is the same shape you'd want from a load test's own live
+results.
+
+Or drive it directly from the terminal:
 
 ```sh
 # schedule a launch

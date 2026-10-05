@@ -5,18 +5,45 @@
 <title>LaunchPad — mission control</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: ui-monospace, Menlo, Consolas, monospace; background:#0b0e14; color:#d7dce3; margin:0; padding:2rem; }
-  h1 { font-size:1.1rem; color:#8fd3ff; margin:0 0 1.5rem; letter-spacing:.04em; text-transform:uppercase; }
+  :root {
+    color-scheme: dark;
+    --surface-1: #0b0e14;
+    --surface-2: #05070b;
+    --panel-border: #1f2733;
+    --text-primary: #d7dce3;
+    --text-secondary: #8b96a8;
+    --text-muted: #67738a;
+    --accent: #8fd3ff;
+    --grid-line: #1c2531;
+    --axis-line: #2a3344;
+  }
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; background:var(--surface-1); color:var(--text-primary); margin:0; padding:2rem; }
+  h1 { font-size:1.1rem; color:var(--accent); margin:0 0 1.5rem; letter-spacing:.04em; text-transform:uppercase; }
   .grid { display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; max-width:900px; }
-  fieldset { border:1px solid #1f2733; border-radius:8px; padding:1rem; }
-  legend { color:#8fd3ff; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
-  input, select, button { background:#121722; color:#d7dce3; border:1px solid #2a3344; border-radius:4px; padding:.4rem .5rem; margin:.15rem 0; font-family:inherit; }
+  fieldset { border:1px solid var(--panel-border); border-radius:8px; padding:1rem; }
+  legend { color:var(--accent); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
+  input, select, button { background:#121722; color:var(--text-primary); border:1px solid var(--axis-line); border-radius:4px; padding:.4rem .5rem; margin:.15rem 0; font-family:inherit; }
   button { cursor:pointer; }
-  button:hover { border-color:#8fd3ff; }
-  pre { background:#05070b; border:1px solid #1f2733; border-radius:6px; padding:.75rem; height:260px; overflow:auto; font-size:.78rem; }
+  button:hover { border-color:var(--accent); }
+  pre { background:var(--surface-2); border:1px solid var(--panel-border); border-radius:6px; padding:.75rem; height:260px; overflow:auto; font-size:.78rem; margin:0; }
   .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:.5rem; }
-  .muted { color:#67738a; font-size:.75rem; }
+  .muted { color:var(--text-muted); font-size:.75rem; }
+
+  /* --- chart --- */
+  .chart-card { max-width:900px; margin-top:1.5rem; }
+  .chart-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.5rem; flex-wrap:wrap; gap:.5rem; }
+  .chart-value { font-size:1.3rem; color:var(--text-primary); font-variant-numeric: tabular-nums; }
+  .chart-value .unit { font-size:.75rem; color:var(--text-secondary); margin-left:.3rem; }
+  .chart-wrap { position:relative; background:var(--surface-2); border:1px solid var(--panel-border); border-radius:6px; padding:.5rem .75rem .25rem; }
+  svg#chart { width:100%; height:200px; display:block; overflow:visible; }
+  .grid-line { stroke:var(--grid-line); stroke-width:1; }
+  .axis-line { stroke:var(--axis-line); stroke-width:1; }
+  .axis-label { fill:var(--text-muted); font-size:10px; font-family:inherit; }
+  .series-line { fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .crosshair { stroke:var(--text-secondary); stroke-width:1; stroke-dasharray:3 3; opacity:0; }
+  .hover-dot { fill:var(--accent); stroke:var(--surface-2); stroke-width:2; opacity:0; }
+  .tooltip { font-size:10.5px; fill:var(--text-primary); }
+  .tooltip-bg { fill:var(--surface-1); stroke:var(--panel-border); opacity:0; }
 </style>
 </head>
 <body>
@@ -36,14 +63,58 @@
       </div>
     </fieldset>
     <fieldset>
-      <legend>live telemetry</legend>
+      <legend>live telemetry (raw)</legend>
       <pre id="telemetry">(not connected)</pre>
     </fieldset>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <div class="row" style="margin-bottom:0;">
+        <span class="muted">metric</span>
+        <select id="metric" onchange="redraw()">
+          <option value="thrust_kn" selected>thrust (kN)</option>
+          <option value="altitude_m">altitude (m)</option>
+          <option value="velocity_mps">velocity (m/s)</option>
+          <option value="fuel_pct">fuel (%)</option>
+        </select>
+      </div>
+      <div class="chart-value"><span id="chartCurrent">&mdash;</span><span class="unit" id="chartUnit"></span></div>
+    </div>
+    <div class="chart-wrap">
+      <svg id="chart" viewBox="0 0 820 200" preserveAspectRatio="none">
+        <g id="gridlines"></g>
+        <g id="axisLabels"></g>
+        <polyline id="seriesLine" class="series-line" points=""></polyline>
+        <line id="crosshair" class="crosshair" x1="0" y1="0" x2="0" y2="200"></line>
+        <circle id="hoverDot" class="hover-dot" r="4" cx="0" cy="0"></circle>
+        <rect id="tooltipBg" class="tooltip-bg" x="0" y="0" width="90" height="30" rx="4"></rect>
+        <text id="tooltipLine1" class="tooltip" x="0" y="0"></text>
+        <text id="tooltipLine2" class="tooltip" x="0" y="0"></text>
+        <rect id="hoverCapture" x="0" y="0" width="820" height="200" fill="transparent"
+              style="cursor:crosshair;"
+              onmousemove="onHover(event)" onmouseleave="onHoverEnd()"></rect>
+      </svg>
+    </div>
+    <p class="muted">x-axis: time since ignition (seconds). Reconnects and clears when you ignite a new launch.</p>
   </div>
 
 <script>
 let currentLaunch = null;
 let socket = null;
+
+// Each point: { tMs: number, thrust_kn, altitude_m, velocity_mps, fuel_pct }
+let telemetryPoints = [];
+
+const METRIC_UNITS = {
+  thrust_kn: 'kN',
+  altitude_m: 'm',
+  velocity_mps: 'm/s',
+  fuel_pct: '%',
+};
+
+const CHART_W = 820, CHART_H = 200;
+const PAD = { top: 10, right: 12, bottom: 20, left: 12 };
 
 async function schedule() {
   const body = {
@@ -63,9 +134,20 @@ function connect(id) {
   socket = new WebSocket(proto + '://' + location.host + '/ws/launches/' + id);
   const pre = document.getElementById('telemetry');
   pre.textContent = '';
+  telemetryPoints = [];
+  redraw();
+
   socket.onmessage = (ev) => {
     pre.textContent += ev.data + '\n';
     pre.scrollTop = pre.scrollHeight;
+    try {
+      const frame = JSON.parse(ev.data);
+      if (typeof frame.t_plus_ms === 'number') {
+        telemetryPoints.push(frame);
+        if (telemetryPoints.length > 400) telemetryPoints.shift();
+        redraw();
+      }
+    } catch (e) { /* non-JSON line, ignore for the chart */ }
   };
   socket.onclose = () => { pre.textContent += '\n(disconnected)'; };
 }
@@ -83,6 +165,144 @@ async function abort() {
     body: JSON.stringify({ reason: 'manual abort from dashboard' }),
   });
 }
+
+// --- chart ---
+
+function currentMetric() {
+  return document.getElementById('metric').value;
+}
+
+function scales() {
+  const metric = currentMetric();
+  const xs = telemetryPoints.map(p => p.t_plus_ms);
+  const ys = telemetryPoints.map(p => p[metric] || 0);
+  const xMax = Math.max(1, ...xs);
+  let yMax = Math.max(...ys, 0);
+  yMax = yMax > 0 ? yMax * 1.15 : 1;
+  const innerW = CHART_W - PAD.left - PAD.right;
+  const innerH = CHART_H - PAD.top - PAD.bottom;
+  const xScale = (t) => PAD.left + (t / xMax) * innerW;
+  const yScale = (v) => PAD.top + innerH - (v / yMax) * innerH;
+  return { xScale, yScale, xMax, yMax, innerW, innerH };
+}
+
+function redraw() {
+  const metric = currentMetric();
+  document.getElementById('chartUnit').textContent = METRIC_UNITS[metric] || '';
+
+  const gridG = document.getElementById('gridlines');
+  const labelsG = document.getElementById('axisLabels');
+  gridG.innerHTML = '';
+  labelsG.innerHTML = '';
+
+  const { xScale, yScale, xMax, yMax, innerW, innerH } = scales();
+
+  // horizontal gridlines (4 bands) + y labels
+  const bands = 4;
+  for (let i = 0; i <= bands; i++) {
+    const v = (yMax / bands) * i;
+    const y = yScale(v);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'grid-line');
+    line.setAttribute('x1', PAD.left);
+    line.setAttribute('x2', CHART_W - PAD.right);
+    line.setAttribute('y1', y);
+    line.setAttribute('y2', y);
+    gridG.appendChild(line);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('class', 'axis-label');
+    label.setAttribute('x', 2);
+    label.setAttribute('y', y - 2);
+    label.textContent = Math.round(v);
+    labelsG.appendChild(label);
+  }
+
+  // baseline axis
+  const baseline = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  baseline.setAttribute('class', 'axis-line');
+  baseline.setAttribute('x1', PAD.left);
+  baseline.setAttribute('x2', CHART_W - PAD.right);
+  baseline.setAttribute('y1', CHART_H - PAD.bottom);
+  baseline.setAttribute('y2', CHART_H - PAD.bottom);
+  gridG.appendChild(baseline);
+
+  // x labels (seconds, 4 ticks)
+  for (let i = 0; i <= 4; i++) {
+    const t = (xMax / 4) * i;
+    const x = xScale(t);
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('class', 'axis-label');
+    label.setAttribute('x', Math.min(Math.max(x - 10, PAD.left), CHART_W - 30));
+    label.setAttribute('y', CHART_H - 4);
+    label.textContent = (t / 1000).toFixed(1) + 's';
+    labelsG.appendChild(label);
+  }
+
+  // series line
+  const points = telemetryPoints
+    .map(p => xScale(p.t_plus_ms) + ',' + yScale(p[metric] || 0))
+    .join(' ');
+  document.getElementById('seriesLine').setAttribute('points', points);
+
+  // current value readout
+  const last = telemetryPoints[telemetryPoints.length - 1];
+  document.getElementById('chartCurrent').textContent =
+    last ? (Math.round((last[metric] || 0) * 10) / 10) : '—';
+}
+
+function onHover(evt) {
+  if (telemetryPoints.length === 0) return;
+  const svg = document.getElementById('chart');
+  const rect = evt.currentTarget.getBoundingClientRect();
+  const relX = (evt.clientX - rect.left) / rect.width;
+  const { xScale, yScale, xMax } = scales();
+  const targetT = relX * xMax;
+
+  // nearest point by t_plus_ms
+  let nearest = telemetryPoints[0];
+  let bestDiff = Infinity;
+  for (const p of telemetryPoints) {
+    const diff = Math.abs(p.t_plus_ms - targetT);
+    if (diff < bestDiff) { bestDiff = diff; nearest = p; }
+  }
+
+  const metric = currentMetric();
+  const x = xScale(nearest.t_plus_ms);
+  const y = yScale(nearest[metric] || 0);
+
+  const crosshair = document.getElementById('crosshair');
+  crosshair.setAttribute('x1', x); crosshair.setAttribute('x2', x);
+  crosshair.style.opacity = 1;
+
+  const dot = document.getElementById('hoverDot');
+  dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+  dot.style.opacity = 1;
+
+  const tipX = Math.min(x + 8, CHART_W - 95);
+  const tipY = Math.max(y - 34, PAD.top);
+  const bg = document.getElementById('tooltipBg');
+  bg.setAttribute('x', tipX); bg.setAttribute('y', tipY);
+  bg.style.opacity = 1;
+
+  const l1 = document.getElementById('tooltipLine1');
+  l1.setAttribute('x', tipX + 6); l1.setAttribute('y', tipY + 13);
+  l1.textContent = (Math.round((nearest[metric] || 0) * 10) / 10) + ' ' + (METRIC_UNITS[metric] || '');
+
+  const l2 = document.getElementById('tooltipLine2');
+  l2.setAttribute('x', tipX + 6); l2.setAttribute('y', tipY + 25);
+  l2.textContent = 't+' + (nearest.t_plus_ms / 1000).toFixed(1) + 's';
+}
+
+function onHoverEnd() {
+  document.getElementById('crosshair').style.opacity = 0;
+  document.getElementById('hoverDot').style.opacity = 0;
+  document.getElementById('tooltipBg').style.opacity = 0;
+  document.getElementById('tooltipLine1').textContent = '';
+  document.getElementById('tooltipLine2').textContent = '';
+}
+
+redraw();
 </script>
 </body>
 </html>
