@@ -145,7 +145,23 @@ go build -o "$STACK_DIR/bin/missioncontrol" ./cmd/missioncontrol
 GRAFANA_PROVISIONING="$STACK_DIR/grafana-provisioning"
 rm -rf "$GRAFANA_PROVISIONING"
 mkdir -p "$GRAFANA_PROVISIONING/datasources" "$GRAFANA_PROVISIONING/dashboards"
-cp deploy/grafana/provisioning/datasources/datasource.yml "$GRAFANA_PROVISIONING/datasources/"
+
+# Note: we do NOT copy deploy/grafana/provisioning/datasources/datasource.yml
+# here — that one points at "http://prometheus:9090", a hostname that only
+# resolves inside Docker's network. Running locally, Prometheus is just on
+# localhost, so we write our own copy of the datasource file with that URL.
+cat > "$GRAFANA_PROVISIONING/datasources/datasource.yml" <<EOF
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+    editable: false
+EOF
+
 DASHBOARDS_ABS_PATH="$(cd deploy/grafana/dashboards && pwd)"
 cat > "$GRAFANA_PROVISIONING/dashboards/dashboards.yml" <<EOF
 apiVersion: 1
