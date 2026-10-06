@@ -21,9 +21,48 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the two
 services fit together, and [`examples/`](examples/README.md) for the
 endpoints to point a load test at.
 
-## Run it
+## Getting started
 
-Requires Go 1.26+.
+On macOS, the full stack (the two Go services, Prometheus, and Grafana)
+starts and stops with the scripts in `deploy/`. No Docker and no sudo.
+Requires Go 1.26+, `curl`, and `python3`.
+
+From the repo root:
+
+```sh
+./deploy/run-local.sh
+```
+
+The first run downloads Prometheus and Grafana into `deploy/.local-stack/`,
+builds `engine` and `missioncontrol`, starts all four in the
+background, and sends a short burst of test traffic. It then prints the
+URLs:
+
+- Dashboard: http://localhost:8080
+- Grafana: http://localhost:3000 (anonymous viewer access is on; the
+  "LaunchPad — live traffic" dashboard is already provisioned)
+- Prometheus targets: http://localhost:9090/targets
+
+Schedule a launch, click ignite, and watch live engine telemetry stream in —
+both as raw JSON frames and as a line chart (time since ignition on the
+x-axis, your choice of thrust/altitude/velocity/fuel on the y-axis, with a
+hover crosshair for exact values). It's a quick visual way to see a metric
+ramp up in real time, which is the same shape you'd want from a load test's
+own live results.
+
+Run the script again while the stack is up and it skips the start and just
+sends another burst of traffic. Stop everything with:
+
+```sh
+./deploy/stop-local.sh
+```
+
+The script is macOS-only (it downloads `darwin-*` binaries). On Linux, use
+the Docker setup below, or run the two services directly.
+
+### App only
+
+If you only need the dashboard and API, without Prometheus or Grafana:
 
 ```sh
 # terminal 1
@@ -33,13 +72,7 @@ go run ./cmd/engine
 go run ./cmd/missioncontrol
 ```
 
-Then open http://localhost:8080 for the dashboard. Schedule a launch, click
-ignite, and watch live engine telemetry stream in — both as raw JSON frames
-and as a line chart (time since ignition on the x-axis, your choice of
-thrust/altitude/velocity/fuel on the y-axis, with a hover crosshair for
-exact values). It's a quick visual way to see a metric ramp up in real
-time, which is the same shape you'd want from a load test's own live
-results.
+Then open http://localhost:8080.
 
 Or drive it directly from the terminal:
 
@@ -69,16 +102,20 @@ The dashboard's chart only shows what you trigger from the browser. If
 something else is sending traffic — a VegaLoad scenario, a script, load
 from any source — that traffic doesn't go through the browser at all, so
 the dashboard chart won't move. For that, LaunchPad exposes Prometheus
-metrics, and the Docker setup includes a ready-to-use Grafana dashboard
+metrics, and both local setups include a ready-to-use Grafana dashboard
 that shows it live, no matter who's generating it.
 
 ```sh
+# macOS, no Docker
+./deploy/run-local.sh
+
+# or, with Docker
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
 Then open http://localhost:3000 (Grafana; anonymous viewer access is on
-by default, or sign in with `admin` / `admin`). The "LaunchPad — live
-traffic" dashboard is already provisioned, with:
+by default, or sign in with `admin` / `admin` when using Docker). The
+"LaunchPad — live traffic" dashboard is already provisioned, with:
 
 - REST requests/sec, by route
 - REST error rate (4xx/5xx)/sec
