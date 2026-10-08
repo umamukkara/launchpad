@@ -90,6 +90,8 @@ websocat ws://localhost:8080/ws/launches/launch-0001
 curl -s -X POST localhost:8080/api/launches/launch-0001/ignite
 ```
 
+`GET /api/engine/status` and `POST .../ignite` talk to the engine over gRPC with a 3s timeout. If the engine is down or frozen, those routes return HTTP 502 instead of hanging. `GET /api/launches` is in-process only and stays 200. Optional ignite retries: query `?retries=2` or `LAUNCHPAD_IGNITE_RETRIES`. See [`examples/resilience/`](examples/resilience/README.md).
+
 ### With Docker
 
 ```sh
