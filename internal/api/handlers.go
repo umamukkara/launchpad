@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -221,12 +222,25 @@ func (s *Server) ignite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stream, err := s.engine.Ignite(context.Background(), &pb.IgniteRequest{
+	req := &pb.IgniteRequest{
 		LaunchId:        l.ID,
 		Vehicle:         l.Vehicle,
 		TargetThrustKn:  l.TargetThrustKN,
 		DurationSeconds: l.DurationSec,
-	})
+	}
+	retries := igniteRetries(r)
+	var stream pb.EngineControl_IgniteClient
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if err = s.waitEngine(r.Context()); err != nil {
+			continue
+		}
+		// Stream outlives this HTTP handler; do not bind it to r.Context().
+		stream, err = s.engine.Ignite(context.Background(), req)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -281,6 +295,31 @@ func (s *Server) engineStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// waitEngine fails fast when the engine gRPC service is down or frozen
+// (for example SIGSTOP), instead of hanging the HTTP caller forever.
+func (s *Server) waitEngine(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
+	defer cancel()
+	_, err := s.engine.Status(ctx, &pb.StatusRequest{})
+	return err
+}
+
+func igniteRetries(r *http.Request) int {
+	if q := r.URL.Query().Get("retries"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err == nil && n >= 0 && n <= 8 {
+			return n
+		}
+	}
+	if v := os.Getenv("LAUNCHPAD_IGNITE_RETRIES"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil && n >= 0 && n <= 8 {
+			return n
+		}
+	}
+	return 0
 }
 
 func (s *Server) launchWS(w http.ResponseWriter, r *http.Request) {

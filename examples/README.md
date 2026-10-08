@@ -17,3 +17,7 @@ A typical scenario flow: `POST /api/launches` to schedule a launch, open
 the WebSocket for that launch ID, then `POST /api/launches/{id}/ignite`
 and read frames off the socket until `STAGE_COMPLETE`. See the repo
 README for the full request/response shapes.
+
+Chaos / process-pause probes should use `GET /api/engine/status` (gRPC to
+engine, 3s timeout). `GET /api/launches` does not call engine. See
+[`resilience/`](resilience/README.md).
